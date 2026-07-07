@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2021"
 
 [dependencies]
-hayagriva = "0.8.1"
+hayagriva = "0.10.1"
 wasm-bindgen = "0.2.100"
 
 [lib]
