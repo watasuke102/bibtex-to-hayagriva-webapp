@@ -3,6 +3,39 @@ use hayagriva::io::to_yaml_str;
 use hayagriva::lang::TitleCase;
 use wasm_bindgen::prelude::*;
 
+fn citation_key_from_title(title: &str) -> String {
+    let words = title
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .take(6)
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+
+    format!("bib_{}", words.join("_"))
+}
+
+fn replace_citation_keys(yaml: &str, citation_keys: &[String]) -> String {
+    let mut citation_keys = citation_keys.iter();
+    let mut result = yaml
+        .lines()
+        .map(|line| {
+            if !line.starts_with(char::is_whitespace) && line.ends_with(':') {
+                if let Some(key) = citation_keys.next() {
+                    return format!("{key}:");
+                }
+            }
+            line.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if yaml.ends_with('\n') {
+        result.push('\n');
+    }
+
+    result
+}
+
 #[wasm_bindgen]
 pub fn convert_biblatex_to_hayagriva(bib_str: &str) -> String {
     let result = from_biblatex_str(bib_str);
@@ -11,17 +44,23 @@ pub fn convert_biblatex_to_hayagriva(bib_str: &str) -> String {
             if library.is_empty() {
                 "Error parsing Bibtex".to_string()
             } else {
+                let mut citation_keys = Vec::with_capacity(library.len());
                 let formatted_library = library
                     .into_iter()
                     .map(|mut entry| {
                         if let Some(mut title) = entry.title().cloned() {
+                            citation_keys.push(citation_key_from_title(&title.value.to_string()));
                             title.value = title.format_title_case(TitleCase::new()).into();
                             entry.set_title(title);
+                        } else {
+                            citation_keys.push(entry.key().to_string());
                         }
                         entry
                     })
                     .collect();
-                to_yaml_str(&formatted_library).unwrap_or("Error converting to YAML".to_string())
+                to_yaml_str(&formatted_library)
+                    .map(|yaml| replace_citation_keys(&yaml, &citation_keys))
+                    .unwrap_or("Error converting to YAML".to_string())
             }
         }
         Err(errors) => {
@@ -59,8 +98,16 @@ mod tests {
         assert!(!result.starts_with("Error converting to YAML"));
 
         // Should contain YAML-like content
-        assert!(result.contains("example"));
+        assert!(result.contains("bib_test_article:"));
         assert!(result.contains("Test Article"));
+    }
+
+    #[test]
+    fn test_citation_key_from_title() {
+        assert_eq!(
+            citation_key_from_title("MidAir-Focus: A Novel Approach for Spatial Interaction"),
+            "bib_midair_focus_a_novel_approach_for"
+        );
     }
 
     #[test]
